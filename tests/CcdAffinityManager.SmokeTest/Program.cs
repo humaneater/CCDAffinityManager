@@ -18,6 +18,7 @@ if (topology.RecommendedMask == 0 ||
 
 var pingPath = Path.Combine(Environment.SystemDirectory, "ping.exe");
 await ValidateProcessStartWatcherAsync(pingPath);
+ValidateSuspendedLaunch(pingPath, topology);
 
 using var target = Process.Start(new ProcessStartInfo
 {
@@ -32,6 +33,62 @@ if (target is null)
 {
     Console.Error.WriteLine("Could not start the test process.");
     return 2;
+}
+
+static void ValidateSuspendedLaunch(string pingPath, CpuTopology topology)
+{
+    var launchResult = SuspendedProcessLauncher.LaunchWithAffinity(
+        pingPath,
+        "-n 30 127.0.0.1",
+        Path.GetDirectoryName(pingPath),
+        topology.RecommendedMask);
+    using var process = Process.GetProcessById(launchResult.ProcessId);
+    var service = new AffinityService(topology.SystemMask);
+
+    try
+    {
+        if (launchResult.AffinityError is not null)
+        {
+            throw new InvalidOperationException(launchResult.AffinityError);
+        }
+
+        process.Refresh();
+        var launchedMask = unchecked((ulong)process.ProcessorAffinity.ToInt64());
+        Console.WriteLine($"Suspended launch mask: 0x{launchedMask:X}");
+        if (launchedMask != topology.RecommendedMask)
+        {
+            throw new InvalidOperationException("Suspended launch affinity validation failed.");
+        }
+
+        if (!service.TrackLaunchedProcess(
+                launchResult.ProcessId,
+                Guid.NewGuid(),
+                launchResult.OriginalMask))
+        {
+            throw new InvalidOperationException("Could not track the suspended process.");
+        }
+
+        var restoreResult = service.RestoreAll();
+        process.Refresh();
+        var restoredMask = unchecked((ulong)process.ProcessorAffinity.ToInt64());
+        if (restoreResult.FailedProcesses != 0 ||
+            restoredMask != launchResult.OriginalMask)
+        {
+            throw new InvalidOperationException("Suspended launch restore validation failed.");
+        }
+
+        Console.WriteLine("Suspended launch validation passed.");
+    }
+    finally
+    {
+        service.RestoreAll();
+        if (!process.HasExited)
+        {
+            process.Kill();
+        }
+
+        process.WaitForExit();
+    }
 }
 
 var originalMask = unchecked((ulong)target.ProcessorAffinity.ToInt64());

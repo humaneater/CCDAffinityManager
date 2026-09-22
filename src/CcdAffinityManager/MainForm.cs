@@ -564,6 +564,41 @@ public sealed class MainForm : Form
 
         try
         {
+            var bindAtLaunch = _monitoring && rule.Enabled;
+            if (bindAtLaunch)
+            {
+                var launchResult = SuspendedProcessLauncher.LaunchWithAffinity(
+                    rule.ExecutablePath,
+                    null,
+                    Path.GetDirectoryName(rule.ExecutablePath) ?? string.Empty,
+                    rule.AffinityMask & _topology.SystemMask);
+
+                if (launchResult.AffinityError is null &&
+                    _affinityService.TrackLaunchedProcess(
+                        launchResult.ProcessId,
+                        rule.Id,
+                        launchResult.OriginalMask))
+                {
+                    rule.SetRuntimeStatus("已启动，启动时已绑定");
+                    SetStatus($"已启动 {rule.DisplayName}，并在进程启动前绑定 {rule.AffinityText}。");
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(launchResult.AffinityError))
+                {
+                    rule.SetRuntimeStatus($"启动成功，但绑定失败：{TrimStatus(launchResult.AffinityError)}");
+                    SetStatus($"已启动 {rule.DisplayName}，但启动时绑定失败。");
+                }
+                else
+                {
+                    rule.SetRuntimeStatus("启动成功，正在确认亲和度");
+                    SetStatus($"已启动 {rule.DisplayName}，正在确认亲和度。");
+                }
+
+                HandleProcessStarted(launchResult.ProcessId, rule.ExecutableName);
+                return;
+            }
+
             var process = Process.Start(new ProcessStartInfo
             {
                 FileName = rule.ExecutablePath,

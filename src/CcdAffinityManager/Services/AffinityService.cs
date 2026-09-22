@@ -117,6 +117,47 @@ internal sealed class AffinityService
         }
     }
 
+    public bool TrackLaunchedProcess(
+        int processId,
+        Guid ruleId,
+        ulong originalMask)
+    {
+        lock (_operationGate)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(processId);
+                if (process.HasExited)
+                {
+                    return false;
+                }
+
+                var existingState = GetState(processId);
+                if (existingState is not null && existingState.RuleId != ruleId)
+                {
+                    return false;
+                }
+
+                var startTicks = ProcessInspector.TryGetStartTimeUtc(process, out var ticks)
+                    ? ticks
+                    : (long?)null;
+                SetState(
+                    processId,
+                    new AppliedState(
+                        ruleId,
+                        originalMask & _systemMask,
+                        startTicks));
+                return true;
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or InvalidOperationException or
+                Win32Exception or NotSupportedException)
+            {
+                return false;
+            }
+        }
+    }
+
     private static string? GetRuleProcessName(AffinityRule rule)
     {
         var processName = rule.ProcessName;

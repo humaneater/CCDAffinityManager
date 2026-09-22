@@ -18,7 +18,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <DebugType>embedded</DebugType>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Local</Authors>
     <Product>CcdAffinityManager</Product>
     <Description>Persistent CPU affinity manager for AMD X3D CCDs.</Description>
